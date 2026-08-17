@@ -247,6 +247,26 @@ document.getElementById('scriptBox').textContent = APPS_SCRIPT;
 
 document.getElementById('wordInput').addEventListener('keydown', e => { if (e.key === 'Enter') lookupWord(); });
 
+function getFallbacks(word) {
+  const fallbacks = [];
+  if (word.endsWith('ally')) fallbacks.push(word.slice(0,-4)+'al', word.slice(0,-4));
+  if (word.endsWith('ly')) fallbacks.push(word.slice(0,-2));
+  if (word.endsWith('ing')) fallbacks.push(word.slice(0,-3), word.slice(0,-3)+'e');
+  if (word.endsWith('tion')) fallbacks.push(word.slice(0,-4)+'t', word.slice(0,-4)+'te');
+  if (word.endsWith('ed')) fallbacks.push(word.slice(0,-2), word.slice(0,-1));
+  if (word.endsWith('ness')) fallbacks.push(word.slice(0,-4));
+  if (word.endsWith('ment')) fallbacks.push(word.slice(0,-4));
+  if (word.endsWith('er')) fallbacks.push(word.slice(0,-2));
+  if (word.endsWith('est')) fallbacks.push(word.slice(0,-3));
+  return [...new Set(fallbacks.filter(w => w.length > 2))];
+}
+
+async function fetchWord(w) {
+  const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
+  if (!res.ok) throw new Error();
+  return res.json();
+}
+
 async function lookupWord() {
   const word = document.getElementById('wordInput').value.trim().toLowerCase();
   if (!word) return;
@@ -259,13 +279,22 @@ async function lookupWord() {
   card.classList.add('visible');
   document.getElementById('saveStatus').textContent = '';
   try {
-    const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
-    if (!res.ok) throw new Error();
-    const data = await res.json();
+    let data, foundWord = word;
+    try {
+      data = await fetchWord(word);
+    } catch(e) {
+      const fallbacks = getFallbacks(word);
+      let found = false;
+      for (const fb of fallbacks) {
+        try { data = await fetchWord(fb); foundWord = fb; found = true; break; } catch(e2) {}
+      }
+      if (!found) throw new Error();
+    }
     const entry = data[0];
     const phonetic = entry.phonetics?.find(p => p.text)?.text || '';
-    currentResult = { word: entry.word, meanings: [] };
-    let html = `<div class="word-title">${entry.word}</div>`;
+    currentResult = { word: word !== foundWord ? word : entry.word, meanings: [] };
+    let html = `<div class="word-title">${word}</div>`;
+    if (word !== foundWord) html += `<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Showing results for base form: <em>${entry.word}</em></div>`;
     if (phonetic) html += `<div class="phonetic">${phonetic}</div>`;
     (entry.meanings || []).slice(0, 2).forEach(m => {
       const def = m.definitions?.[0];
